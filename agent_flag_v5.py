@@ -83,6 +83,8 @@ class Environment:
         # 走到相应位置获得奖励
         self.reward_info = {
             "flag": 1000,
+            "server": 1000,
+            "double_reach": 2000,    # 无人机和只能终端均到了同一个小旗子的位置
             "obstacle": -100,
             "road": -1,
         }
@@ -326,7 +328,54 @@ class Environment:
         """
         dones = []
         rewards = []
-        pass
+        workers = self.get_workers()
+        for worker_index in range(len(workers)):
+            worker = workers[worker_index]
+            position = worker.position.copy()
+            action = actions[worker_index]
+
+            # 转移位置
+            # 删除原有位置的元素
+            self.space_occupy[self.state_value_index[worker.name], position[0], position[1]] = 0
+            move_x, move_y = [0, 0]
+            if action == self.action_value_info['up']:
+                position[1] -= 1
+                move_y -= 1
+            if action == self.action_value_info['down']:
+                position[1] += 1
+                move_y += 1
+            if action == self.action_value_info['left']:
+                position[0] -= 1
+                move_x -= 1
+            if action == self.action_value_info['right']:
+                position[0] += 1
+                move_x += 1
+            if action == self.action_value_info['no_op']:
+                pass
+
+            # 计算reward 与 done
+            reward, done, remove_flag =self.get_reward_done(worker, position)
+
+            # worker更新
+            worker.set_position(position)
+            self.space_occupy[self.state_value_index[worker.name], position[0], position[1]] = \
+                self.state_value_info[worker.name]
+            if self.render_mode == 'human':
+                self.canvas.move(worker.tk_id,
+                                 move_x * self.pixels, move_y * self.pixels)
+            elif self.render_mode == "None":
+                pass
+
+            rewards.append(reward)
+            dones.append(done)
+
+            # 移除元素
+            for flag in remove_flag:
+                self.space_occupy[self.state_value_index['flag'], flag[0], flag[1]] = 0
+                self.canvas.delete(flag.tk_id)
+                self.flags.remove(flag)
+            self.mode_update()
+        return np.array(rewards).reshape((self.n_worker, 1)), np.array(dones).reshape((self.n_worker, 1))
 
     def get_avail_actions(self,):
         """
@@ -434,17 +483,97 @@ class Environment:
         :return:
         workers: list
         """
-        return self.phones + self.uavs
+        return self.phones  + self.uavs
+
+    def get_reward_done(self, worker, position):
+        """
+        计算奖励与done
+        :param worker: type: EnvObject
+        :param position: type = list, shape = (2,)
+        :return:
+        reward: float
+            如果是智能终端，则奖励依据所处的位置即可直接给出
+            如果是无人机，则依据此时无人机的数据容量。
+                容量满了，则只有到达数据服务器才有奖励，否则为 -1
+                容量不满，则到达任务点就有奖励，否则为 -1
+            如果两者在一块时，在无人机容量满时，依旧不给奖励。如果容量不满，则给奖励。
+        done: bool
+        remove_flags: type = list,
+            找到的需要删除的小旗子
+        """
+        remove_flags = []
+        if worker.name == 'phone':
+            # 如果找到小旗子
+            if self.space_occupy[self.state_value_index['flag'], position[0], position[1]] == \
+                    self.state_value_info['flag']:
+                reward = self.reward_info['flag']
+                done = False
+            # 如果碰到障碍物
+            elif self.space_occupy[self.state_value_index['obstacle'], position[0], position[1]] == \
+                    self.state_value_info['obstacle']:
+                reward = self.reward_info['obstacle']
+                done = True
+            # 如果到达空地
+            else:
+                reward = self.reward_info['road']
+                done = True
+        elif worker.name == 'uav':
+            # 如果容量是满的，则只有到达数据服务器才有奖励
+            if worker.content == worker.capacity:
+                # 到达数据服务器
+                if self.space_occupy[self.state_value_index['server'], position[0], position[1]] == \
+                        self.state_value_info['server']:
+                    reward = self.reward_info['server']
+                    done = False
+                # 到达障碍物
+                elif self.space_occupy[self.state_value_index['obstacle'], position[0], position[1]] ==\
+                        self.state_value_info['obstacle']:
+                    reward = self.reward_info['obstacle']
+                    done = True
+                # 到达空地
+                else:
+                    reward = self.reward_info['road']
+                    done = False
+            # 如果容量是不满的，则到达任务点就有奖励
+            else:
+                # 如果找到小旗子, 则奖励
+                if self.space_occupy[self.state_value_index['flag'], position[0], position[1]] == \
+                        self.state_value_info['flag']:
+                    reward = self.reward_info['flag']
+                    done = True
+                    # 如果此处有智能设备，则拔掉小旗子，增加uav的数据内容
+                    if self.space_occupy[self.state_value_index['phone'], position[0], position[1]] == \
+                            self.state_value_info['phone']:
+                        worker.content += EnvObject.flag_content
+                        reward *= 2
+                        # 存储需要删除的小旗子
+                        for flag in self.flags:
+                            if flag.position == position:
+                                remove_flags.append(flag)
+                                break
+                # 如果碰到障碍物
+                elif self.space_occupy[self.state_value_index['obstacle'], position[0], position[1]] == \
+                        self.state_value_info['obstacle']:
+                    reward = self.reward_info['obstacle']
+                    done = True
+                # 到达空地
+                else:
+                    reward = self.reward_info['road']
+                    done = False
+        else:
+            raise ValueError("worker name must be 'phone' or 'uav'")
+        return reward, done, remove_flags
+
 
 if __name__ == '__main__':
     env = Environment(render_mode="human")
     env.reset()
     for i in range(1000):
         action = env.actions_sample()
-        reward, done = env.step(action)
-        print(reward, done)
+        rewards, dones = env.step(action)
+        print(rewards.flatten(), dones.flatten())
         env.render()
-        if done:
+        if any(dones):
             env.reset()
 
 

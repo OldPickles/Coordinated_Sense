@@ -100,6 +100,15 @@ class EnvObject:
         self.content = content
         pass
 
+    def set_position(self, position):
+        """
+        设置元素位置
+        :param position:
+        :return:
+        """
+        self.position = position
+        pass
+
     def set_capacity(self, capacity):
         """
         设置元素数据容量

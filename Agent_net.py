@@ -13,14 +13,17 @@ def orthogonal_init(layer, gain=1.0):
 
 
 class Q_network_RNN(nn.Module):
-    def __init__(self, hidden_dim=64, env=None, use_orthogonal=True):
+    def __init__(self, hidden_dim=64, env=None, use_orthogonal=True,input_dim=None):
         super(Q_network_RNN, self).__init__()
         self.rnn_hidden = None
         self.env = env
 
         self.use_orthogonal_init = use_orthogonal
 
-        self.input_dim = self.env.observation_dim
+        if input_dim:
+            self.input_dim = input_dim
+        else:
+            self.input_dim = self.env.observation_dim
         self.hidden_dim = hidden_dim
         self.output_dim = self.env.avail_actions_dim
 

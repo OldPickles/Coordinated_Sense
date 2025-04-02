@@ -23,18 +23,17 @@ class DelayBuffer:
             "next_avail_actions": np.zeros(((self.buffer_capacity, self.n_workers,) + env.avail_actions_shape)),
             "rewards": np.zeros((self.buffer_capacity, self.n_workers,) + self.env.reward_shape),
             "dones": np.zeros((self.buffer_capacity, self.n_workers,) + self.env.done_shape),
+            "worker_one_hots": np.zeros((self.buffer_capacity, self.n_workers,) + self.env.worker_one_hot_dim),
             "terminate": np.zeros((self.buffer_capacity, 1, 1))
         }
 
-    def store_transition(self, last_states, next_states, last_observations, next_observations, actions,
-                         avail_actions, next_avail_actions, rewards, dones, terminate):
+    def store_transition(self, **kwargs):
         """
         存储经验
         """
         self.memory_size = min(self.memory_size + 1, self.buffer_capacity)
         for key in self.buffer.keys():
-            # eval,通过变量的内容获取变量
-            self.buffer[key][self.memory_index] = eval(key)
+            self.buffer[key][self.memory_index] = kwargs[key]
         self.memory_index = (self.memory_index + 1) % self.buffer_capacity
 
     def sample(self):
